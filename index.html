@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบจัดการเงินกู้ 24 วัน</title>
+    <style>
+        body { font-family: 'Sarabun', Tahoma, sans-serif; background-color: #f4f7f6; margin: 0; padding: 20px; }
+        .container { max-width: 1000px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1, h2 { color: #333; text-align: center; }
+        .form-group { display: flex; gap: 10px; margin-bottom: 15px; flex-wrap: wrap; }
+        input, button { padding: 10px; font-size: 16px; border-radius: 5px; border: 1px solid #ccc; }
+        input { flex: 1; min-width: 150px; }
+        button { background-color: #28a745; color: white; border: none; cursor: pointer; transition: 0.3s; }
+        button:hover { background-color: #218838; }
+        .btn-danger { background-color: #dc3545; }
+        .btn-danger:hover { background-color: #c82333; }
+        .btn-warning { background-color: #ffc107; color: black; }
+        .btn-info { background-color: #17a2b8; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        th { background-color: #007bff; color: white; }
+        .actions button { padding: 5px 10px; margin: 2px; font-size: 14px; }
+        .summary { display: flex; justify-content: space-around; background: #e9ecef; padding: 15px; border-radius: 8px; margin-bottom: 20px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>ระบบจัดการเงินกู้ 24 วัน</h1>
+    
+    <div class="summary">
+        <div>รวมเงินต้นปล่อยกู้: <span id="total-principal">0</span> บาท</div>
+        <div>เงินต้นคงเหลือรวม: <span id="total-remaining">0</span> บาท</div>
+        <div>ยอดรับสุทธิรวม: <span id="total-received">0</span> บาท</div>
+    </div>
+
+    <h2>เพิ่มลูกหนี้ใหม่</h2>
+    <div class="form-group">
+        <input type="text" id="name" placeholder="ชื่อลูกหนี้" required>
+        <input type="number" id="principal" placeholder="เงินต้น (บาท)" required>
+        <input type="number" id="interest_rate" placeholder="ดอกเบี้ย % (เช่น 20)" value="20" required>
+        <input type="number" id="installment" placeholder="จ่ายงวดละ (บาท)" required>
+        <button onclick="addLoan()">บันทึกข้อมูล</button>
+    </div>
+
+    <h2>ระบบสำรองข้อมูล (Backup)</h2>
+    <div class="form-group">
+        <button class="btn-info" onclick="exportData()">💾 สำรองข้อมูล (Export JSON)</button>
+        <input type="file" id="importFile" accept=".json" style="display: none;" onchange="importData(event)">
+        <button class="btn-warning" onclick="document.getElementById('importFile').click()">📂 กู้คืนข้อมูล (Import JSON)</button>
+        <button class="btn-info" onclick="exportCSV()">📊 นำออกเป็น Excel (CSV)</button>
+    </div>
+
+    <h2>รายชื่อลูกหนี้</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ชื่อ</th>
+                <th>เงินต้น</th>
+                <th>ต้น+ดอก</th>
+                <th>จ่ายงวดละ</th>
+                <th>รับแล้ว (สะสม)</th>
+                <th>คงเหลือ</th>
+                <th>จัดการ</th>
+            </tr>
+        </thead>
+        <tbody id="loan-table">
+            <!-- ข้อมูลจะถูกแสดงที่นี่ -->
+        </tbody>
+    </table>
+</div>
+
+<script>
+    let loans = JSON.parse(localStorage.getItem("loanData")) || [];
+
+    function saveToLocal() {
+        localStorage.setItem("loanData", JSON.stringify(loans));
+        renderTable();
+    }
+
+    function addLoan() {
+        let name = document.getElementById("name").value;
+        let principal = parseFloat(document.getElementById("principal").value);
+        let interest_rate = parseFloat(document.getElementById("interest_rate").value);
+        let installment = parseFloat(document.getElementById("installment").value);
+
+        if(!name || isNaN(principal) || isNaN(interest_rate) || isNaN(installment)) {
+            alert("กรุณากรอกข้อมูลให้ครบถ้วน!");
+            return;
+        }
+
+        let total_amount = principal + (principal * (interest_rate / 100));
+        
+        loans.push({
+            id: Date.now(),
+            name: name,
+            principal: principal,
+            total_amount: total_amount,
+            installment: installment,
+            received: 0
+        });
+
+        document.getElementById("name").value = '';
+        document.getElementById("principal").value = '';
+        document.getElementById("installment").value = '';
+        
+        saveToLocal();
+    }
+
+    function payInstallment(id) {
+        let loan = loans.find(l => l.id === id);
+        if (loan) {
+            let amount = prompt(`ระบุยอดที่ ${loan.name} ชำระ (บาท):`, loan.installment);
+            if (amount !== null && !isNaN(amount) && amount > 0) {
+                loan.received += parseFloat(amount);
+                if (loan.received > loan.total_amount) {
+                    loan.received = loan.total_amount;
+                    alert("ยอดชำระเกินกำหนด ได้ปรับให้พอดีกับยอดคงเหลือแล้ว");
+                }
+                saveToLocal();
+            }
+        }
+    }
+
+    function deleteLoan(id) {
+        if(confirm("คุณต้องการลบข้อมูลลูกหนี้รายนี้ใช่หรือไม่?")) {
+            loans = loans.filter(l => l.id !== id);
+            saveToLocal();
+        }
+    }
+
+    function renderTable() {
+        let tbody = document.getElementById("loan-table");
+        tbody.innerHTML = "";
+        
+        let sumPrincipal = 0, sumRemaining = 0, sumReceived = 0;
+
+        loans.forEach(loan => {
+            let remaining = loan.total_amount - loan.received;
+            sumPrincipal += loan.principal;
+            sumRemaining += remaining;
+            sumReceived += loan.received;
+
+            tbody.innerHTML += `
+                <tr>
+                    <td>${loan.name}</td>
+                    <td>${loan.principal.toLocaleString()}</td>
+                    <td>${loan.total_amount.toLocaleString()}</td>
+                    <td>${loan.installment.toLocaleString()}</td>
+                    <td style="color:green; font-weight:bold;">${loan.received.toLocaleString()}</td>
+                    <td style="color:red; font-weight:bold;">${remaining.toLocaleString()}</td>
+                    <td class="actions">
+                        <button onclick="payInstallment(${loan.id})">💰 จ่ายค่างวด</button>
+                        <button class="btn-danger" onclick="deleteLoan(${loan.id})">🗑️ ลบ</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        document.getElementById("total-principal").innerText = sumPrincipal.toLocaleString();
+        document.getElementById("total-remaining").innerText = sumRemaining.toLocaleString();
+        document.getElementById("total-received").innerText = sumReceived.toLocaleString();
+    }
+
+    function exportData() {
+        let dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(loans));
+        let dlAnchorElem = document.createElement('a');
+        dlAnchorElem.setAttribute("href", dataStr);
+        dlAnchorElem.setAttribute("download", "backup_loans.json");
+        dlAnchorElem.click();
+    }
+
+    function importData(event) {
+        let file = event.target.files[0];
+        if (!file) return;
+        let reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                let imported = JSON.parse(e.target.result);
+                if(Array.isArray(imported)) {
+                    loans = imported;
+                    saveToLocal();
+                    alert("กู้คืนข้อมูลสำเร็จ!");
+                }
+            } catch (err) {
+                alert("ไฟล์ไม่ถูกต้อง");
+            }
+        };
+        reader.readAsText(file);
+    }
+
+    function exportCSV() {
+        let csvContent = "data:text/csv;charset=utf-8,\uFEFF";
+        csvContent += "ชื่อ,เงินต้น,ต้น+ดอก,จ่ายงวดละ,รับแล้ว,คงเหลือ\n";
+        loans.forEach(row => {
+            let remaining = row.total_amount - row.received;
+            csvContent += `${row.name},${row.principal},${row.total_amount},${row.installment},${row.received},${remaining}\n`;
+        });
+        let encodedUri = encodeURI(csvContent);
+        let link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "loan_summary.csv");
+        document.body.appendChild(link);
+        link.click();
+    }
+
+    // โหลดข้อมูลเมื่อเปิดหน้าเว็บ
+    renderTable();
+</script>
+
+</body>
+</html>
